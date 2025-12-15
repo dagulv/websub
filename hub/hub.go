@@ -34,11 +34,9 @@ func NewHub(ctx context.Context, capacity int) *Hub {
 			case <-ctx.Done():
 				return
 			case sub := <-h.subscriptionHandler:
-				// go func() {
 				if err := h.HandleSubscription(sub); err != nil {
 					log.Println(err)
 				}
-				// }()
 			}
 		}
 	}()
@@ -107,7 +105,7 @@ func (h *Hub) HandleSubscription(sub Subscription) (err error) {
 	case ModeUnsubscribe:
 		delete(h.subscriptions[sub.Topic], sub.Callback)
 	}
-	log.Println(len(h.subscriptions[sub.Topic]))
+
 	return
 }
 
@@ -128,7 +126,7 @@ func (h *Hub) verify(sub Subscription) (err error) {
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := h.client.Do(req)
-	log.Println(resp)
+
 	if err != nil {
 		return
 	}
