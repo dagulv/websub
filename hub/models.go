@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"sync"
 )
 
 type Mode string
@@ -14,6 +15,7 @@ const (
 const DataMessage = `{"test":"test"}`
 
 type Hub struct {
+	mu                  sync.RWMutex
 	subscriptions       map[string]map[string]Subscription
 	subscriptionHandler chan Subscription
 	publishHandler      chan string

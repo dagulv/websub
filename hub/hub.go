@@ -11,11 +11,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
 func NewHub(ctx context.Context, capacity int) *Hub {
 	h := &Hub{
+		mu:                  sync.RWMutex{},
 		subscriptions:       make(map[string]map[string]Subscription),
 		subscriptionHandler: make(chan Subscription),
 		publishHandler:      make(chan string),
@@ -54,28 +56,36 @@ func (h *Hub) publishWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case t := <-h.publishHandler:
-			for _, sub := range h.subscriptions[t] {
-				if err := h.Send(Content{
-					Subscription: sub,
-					Data:         DataMessage,
-				}); err != nil {
-					log.Println(err)
-				}
-			}
+			h.publishToSubscribers(t)
 		}
 	}
 }
 
-func (h *Hub) HasTopic(topic string) (ok bool) {
-	_, ok = h.subscriptions[topic]
+func (h *Hub) publishToSubscribers(topic string) (err error) {
+	if !h.HasTopic(topic) {
+		return errors.New("topic not found")
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, sub := range h.subscriptions[topic] {
+		if err := h.Send(Content{
+			Subscription: sub,
+			Data:         DataMessage,
+		}); err != nil {
+			log.Println(err)
+		}
+	}
+
 	return
 }
 
-func (h *Hub) HasSubscriber(topic string, callback string) (ok bool, err error) {
-	if !h.HasTopic(topic) {
-		return false, errors.New("topic not found")
-	}
-	_, ok = h.subscriptions[topic][callback]
+func (h *Hub) HasTopic(topic string) (ok bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	_, ok = h.subscriptions[topic]
 	return
 }
 
@@ -87,6 +97,9 @@ func (h *Hub) HandleSubscription(sub Subscription) (err error) {
 	if !h.HasTopic(sub.Topic) {
 		return errors.New("topic not found")
 	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	switch sub.Mode {
 	case ModeSubscribe:
