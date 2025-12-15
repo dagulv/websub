@@ -54,7 +54,9 @@ func (h *Hub) publishWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case t := <-h.publishHandler:
-			h.publishToSubscribers(t)
+			if err := h.publishToSubscribers(t); err != nil {
+				log.Println(err)
+			}
 		}
 	}
 }
@@ -64,10 +66,7 @@ func (h *Hub) publishToSubscribers(topic string) (err error) {
 		return errors.New("topic not found")
 	}
 
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	for _, sub := range h.subscriptions[topic] {
+	for _, sub := range h.getSubscriptions(topic) {
 		if err := h.Send(Content{
 			Subscription: sub,
 			Data:         DataMessage,
@@ -77,6 +76,19 @@ func (h *Hub) publishToSubscribers(topic string) (err error) {
 	}
 
 	return
+}
+
+func (h *Hub) getSubscriptions(topic string) []Subscription {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	subs := make([]Subscription, len(h.subscriptions[topic]))
+
+	for _, sub := range h.subscriptions[topic] {
+		subs = append(subs, sub)
+	}
+
+	return subs
 }
 
 func (h *Hub) HasTopic(topic string) (ok bool) {
