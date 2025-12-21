@@ -35,13 +35,16 @@ func (r Routes) RegisterSubscriptionRoute(w http.ResponseWriter, req *http.Reque
 		Topic:    req.Form.Get("hub.topic"),
 		Secret:   req.Form.Get("hub.secret"),
 	}
-	log.Println(sub)
+
 	w.Header().Set("Content-Type", "application/json")
 
 	w.WriteHeader(http.StatusAccepted)
 
 	go func() {
-		r.HubService.subscriptionHandler <- sub
+		if err := r.HubService.HandleSubscription(sub); err != nil {
+			// TODO: Send a post request to the callback with mode = "denied"
+			return
+		}
 	}()
 }
 

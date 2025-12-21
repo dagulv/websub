@@ -17,10 +17,9 @@ import (
 
 func NewHub(ctx context.Context, capacity int) *Hub {
 	h := &Hub{
-		mu:                  sync.RWMutex{},
-		subscriptions:       make(map[string]map[string]Subscription),
-		subscriptionHandler: make(chan Subscription),
-		publishHandler:      make(chan string),
+		mu:             sync.RWMutex{},
+		subscriptions:  make(map[string]map[string]Subscription),
+		publishHandler: make(chan Content),
 		client: http.Client{
 			Timeout: time.Second * 5,
 		},
@@ -28,54 +27,25 @@ func NewHub(ctx context.Context, capacity int) *Hub {
 
 	h.subscriptions["/a/topic"] = make(map[string]Subscription)
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case sub := <-h.subscriptionHandler:
-				if err := h.HandleSubscription(sub); err != nil {
-					log.Println(err)
-				}
-			}
-		}
-	}()
-
 	for range capacity {
-		go h.publishWorker(ctx)
+		go h.publishWorker(ctx, h.publishHandler)
 	}
 
 	return h
 }
 
-func (h *Hub) publishWorker(ctx context.Context) {
+func (h *Hub) publishWorker(ctx context.Context, contents <-chan Content) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case t := <-h.publishHandler:
-			if err := h.publishToSubscribers(t); err != nil {
+		case content := <-contents:
+			if err := h.Send(content); err != nil {
+				// TODO: Handle client publish error
 				log.Println(err)
 			}
 		}
 	}
-}
-
-func (h *Hub) publishToSubscribers(topic string) (err error) {
-	if !h.HasTopic(topic) {
-		return errors.New("topic not found")
-	}
-
-	for _, sub := range h.getSubscriptions(topic) {
-		if err := h.Send(Content{
-			Subscription: sub,
-			Data:         DataMessage,
-		}); err != nil {
-			log.Println(err)
-		}
-	}
-
-	return
 }
 
 func (h *Hub) getSubscriptions(topic string) []Subscription {
@@ -166,7 +136,18 @@ func (h *Hub) Publish(topic string) (err error) {
 		return errors.New("topic not found")
 	}
 
-	h.publishHandler <- topic
+	data := DataMessage
+
+	subs := h.getSubscriptions(topic)
+
+	go func() {
+		for _, sub := range subs {
+			h.publishHandler <- Content{
+				Subscription: sub,
+				Data:         data,
+			}
+		}
+	}()
 
 	return
 }
